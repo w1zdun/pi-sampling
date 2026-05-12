@@ -1,0 +1,107 @@
+// pi-sampling — per-model sampling params for pi's openai-completions providers.
+//
+// Complements custom providers declared in ~/.pi/agent/models.json. Reads a
+// `sampling` block (at provider and/or model level) from that same file and
+// injects it into the outgoing chat-completions body via the
+// `before_provider_request` event. Adds fields that pi's built-in payload
+// builder does not emit: top_k, min_p, repetition_penalty, plus the standard
+// OpenAI sampling fields when you want explicit per-model defaults.
+//
+// Per-model `sampling` overrides win over provider-level defaults. The handler
+// is scoped to providers/models that declare a `sampling` block — other models
+// are untouched.
+//
+// Control keys (filtered out before the top-level spread):
+//
+//   qwenChatTemplateFlag: <string>
+//     For models that use compat.thinkingFormat: "qwen-chat-template". Pi
+//     defaults to chat_template_kwargs: { enable_thinking, preserve_thinking }.
+//     Setting this flag REPLACES that object with { [flag]: true } — useful
+//     for chat templates that only honor one of these keys.
+
+import fs from "node:fs";
+import path from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+type Sampling = {
+	temperature?: number;
+	top_p?: number;
+	top_k?: number;
+	min_p?: number;
+	presence_penalty?: number;
+	frequency_penalty?: number;
+	repetition_penalty?: number;
+	qwenChatTemplateFlag?: string;
+	[extra: string]: unknown;
+};
+
+type PiModelEntry = { id: string; sampling?: Sampling; [k: string]: unknown };
+type PiProviderEntry = { models?: PiModelEntry[]; sampling?: Sampling; [k: string]: unknown };
+type PiModelsConfig = { providers?: Record<string, PiProviderEntry> };
+
+function stripJsonComments(s: string): string {
+	return s
+		.replace(/\/\*[\s\S]*?\*\//g, "")
+		.replace(/(^|[^:"'`])\/\/.*$/gm, "$1")
+		.replace(/,(\s*[}\]])/g, "$1");
+}
+
+function loadSamplingIndex(): Map<string, Sampling> {
+	const candidates = [
+		path.join(process.env.HOME ?? "", ".pi/agent/models.json"),
+		path.resolve(".pi/models.json"),
+	];
+	const index = new Map<string, Sampling>();
+	for (const file of candidates) {
+		if (!fs.existsSync(file)) continue;
+		const raw = fs.readFileSync(file, "utf-8");
+		let cfg: PiModelsConfig;
+		try {
+			cfg = JSON.parse(stripJsonComments(raw)) as PiModelsConfig;
+		} catch (err) {
+			console.warn(`[extended-openai-provider] failed to parse ${file}: ${(err as Error).message}`);
+			continue;
+		}
+		for (const [providerName, provider] of Object.entries(cfg.providers ?? {})) {
+			const providerDefaults = provider.sampling ?? {};
+			for (const model of provider.models ?? []) {
+				const merged = { ...providerDefaults, ...(model.sampling ?? {}) };
+				if (Object.keys(merged).length === 0) continue;
+				index.set(`${providerName}/${model.id}`, merged);
+			}
+		}
+	}
+	return index;
+}
+
+export default function (pi: ExtensionAPI) {
+	const samplingByKey = loadSamplingIndex();
+	if (samplingByKey.size === 0) {
+		console.warn("[extended-openai-provider] no `sampling` blocks found in models.json — nothing to inject");
+		return;
+	}
+
+	pi.on("before_provider_request", (event, ctx) => {
+		const model = ctx.model;
+		if (!model) return;
+		const extras = samplingByKey.get(`${model.provider}/${model.id}`);
+		if (!extras || !event.payload || typeof event.payload !== "object") return;
+
+		const { qwenChatTemplateFlag, ...topLevelExtras } = extras;
+		const next: Record<string, unknown> = {
+			...(event.payload as Record<string, unknown>),
+			...topLevelExtras,
+		};
+
+		if (
+			typeof qwenChatTemplateFlag === "string" &&
+			qwenChatTemplateFlag.length > 0 &&
+			next.chat_template_kwargs &&
+			typeof next.chat_template_kwargs === "object"
+		) {
+			next.chat_template_kwargs = { [qwenChatTemplateFlag]: true };
+		}
+
+		return next;
+	});
+}

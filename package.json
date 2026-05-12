@@ -1,0 +1,51 @@
+{
+  "name": "@w1zdun/pi-sampling",
+  "version": "0.1.0",
+  "description": "Per-model sampling params (temperature, top_p, top_k, min_p, presence_penalty, repetition_penalty) and qwenChatTemplateFlag for pi's openai-completions custom providers. Reads `sampling` blocks from ~/.pi/agent/models.json.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "openai-completions",
+    "qwen",
+    "sampling",
+    "vllm",
+    "llama-cpp",
+    "mlx"
+  ],
+  "license": "MIT",
+  "author": "w1zdun",
+  "homepage": "https://github.com/w1zdun/pi-sampling#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/w1zdun/pi-sampling.git"
+  },
+  "bugs": {
+    "url": "https://github.com/w1zdun/pi-sampling/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    ".pi/extensions/pi-sampling.ts",
+    ".pi/models.example.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "pi": {
+    "extensions": [".pi/extensions/pi-sampling.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "pack:dry": "npm pack --dry-run",
+    "release": "npm version patch && git push --follow-tags && npm publish --access public"
+  }
+}

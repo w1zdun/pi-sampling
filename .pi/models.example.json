@@ -1,0 +1,89 @@
+{
+  "providers": {
+    "vllm-mlx": {
+      "baseUrl": "http://192.168.62.181:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repetition_penalty": 1.0,
+        "qwenChatTemplateFlag": "preserve_thinking"
+      },
+      "models": [
+        {
+          "id": "./Qwen3.6-35B-A3B-UD-MLX-4bit",
+          "name": "Qwen3.6-35B-A3B",
+          "input": ["text", "image"],
+          "contextWindow": 262144,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingFormat": "qwen-chat-template",
+          "thinkingLevelMap": {
+            "off": "false",
+            "minimal": null,
+            "low": null,
+            "medium": null,
+            "high": "true",
+            "xhigh": null
+          },
+          "compat": {
+            "supportsDeveloperRole": true
+          }
+        }
+      ]
+    },
+    "nuc": {
+      "baseUrl": "http://192.168.62.118:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "ollama",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "sampling": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repetition_penalty": 1.0,
+        "qwenChatTemplateFlag": "preserve_thinking"
+      },
+      "models": [
+        {
+          "id": "Qwen3.6-27B-vision",
+          "name": "Qwen3.6-27B-vision",
+          "input": ["text", "image"],
+          "contextWindow": 130572,
+          "maxTokens": 65536,
+          "reasoning": true,
+          "thinkingFormat": "qwen-chat-template",
+          "thinkingLevelMap": {
+            "off": "false",
+            "minimal": null,
+            "low": null,
+            "medium": null,
+            "high": "true",
+            "xhigh": null
+          },
+          "compat": {
+            "supportsDeveloperRole": true
+          },
+          "sampling": {
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "qwenChatTemplateFlag": "enable_thinking"
+          }
+        }
+      ]
+    }
+  }
+}
