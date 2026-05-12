@@ -59,7 +59,7 @@ function loadSamplingIndex(): Map<string, Sampling> {
 		try {
 			cfg = JSON.parse(stripJsonComments(raw)) as PiModelsConfig;
 		} catch (err) {
-			console.warn(`[extended-openai-provider] failed to parse ${file}: ${(err as Error).message}`);
+			console.warn(`[pi-sampling] failed to parse ${file}: ${(err as Error).message}`);
 			continue;
 		}
 		for (const [providerName, provider] of Object.entries(cfg.providers ?? {})) {
@@ -76,10 +76,7 @@ function loadSamplingIndex(): Map<string, Sampling> {
 
 export default function (pi: ExtensionAPI) {
 	const samplingByKey = loadSamplingIndex();
-	if (samplingByKey.size === 0) {
-		console.warn("[extended-openai-provider] no `sampling` blocks found in models.json — nothing to inject");
-		return;
-	}
+	if (samplingByKey.size === 0) return;
 
 	pi.on("before_provider_request", (event, ctx) => {
 		const model = ctx.model;
