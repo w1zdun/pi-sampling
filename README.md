@@ -2,8 +2,7 @@
 
 Per-model sampling params for [pi](https://pi.dev) custom providers using
 the `openai-completions` API — `temperature`, `top_p`, `top_k`, `min_p`,
-`presence_penalty`, `frequency_penalty`, `repetition_penalty`, plus
-`qwenChatTemplateFlag` for Qwen-style `chat_template_kwargs` control.
+`presence_penalty`, `frequency_penalty`, `repetition_penalty`.
 
 **Universal — works with any provider that uses `api: "openai-completions"`.**
 Drop a `sampling` block into any provider in `~/.pi/agent/models.json` and
@@ -40,10 +39,9 @@ This extension fixes that by hooking pi's `before_provider_request` event
 and merging your declared `sampling` block into the outgoing request body
 just before it's sent. No `streamSimple` reimplementation, no
 monkey-patching — pi's stock streaming, tool calling, thinking, abort
-handling, retries all stay untouched.
-
-Secondary value: `qwenChatTemplateFlag` for fine control of
-`chat_template_kwargs` on Qwen-style local servers.
+handling, retries all stay untouched. In particular, this extension no
+longer touches `chat_template_kwargs` — pi now owns that field natively
+(see [Thinking / `chat_template_kwargs`](#thinking--chat_template_kwargs)).
 
 ## Install
 
@@ -111,8 +109,7 @@ Per the Qwen 3.6 model cards on HuggingFace
         "top_k": 20,
         "min_p": 0.0,
         "presence_penalty": 0.0,
-        "repetition_penalty": 1.0,
-        "qwenChatTemplateFlag": "preserve_thinking"
+        "repetition_penalty": 1.0
       },
       "models": [
         {
@@ -150,8 +147,7 @@ Per the Qwen 3.6 model cards on HuggingFace
         "top_k": 20,
         "min_p": 0.0,
         "presence_penalty": 1.5,
-        "repetition_penalty": 1.0,
-        "qwenChatTemplateFlag": "preserve_thinking"
+        "repetition_penalty": 1.0
       },
       "models": [
         {
@@ -215,34 +211,36 @@ etc.) still apply.
 | `presence_penalty`             | number  | Top-level `presence_penalty`.                                                                                                                                                                                                         |
 | `frequency_penalty`            | number  | Top-level `frequency_penalty`.                                                                                                                                                                                                        |
 | `repetition_penalty`           | number  | Top-level `repetition_penalty`. Accepted by vLLM, MLX-LM, llama.cpp, SGLang.                                                                                                                                                          |
-| `qwenChatTemplateFlag`         | string  | Control key (not sent to the server). When set and the model uses `compat.thinkingFormat: "qwen-chat-template"`, replaces `chat_template_kwargs` with `{ [flag]: true }`. Use `"preserve_thinking"` or `"enable_thinking"`.            |
+| `qwenChatTemplateFlag`         | string  | **Deprecated — ignored.** Stripped from the body (with a one-time warning) so it can't leak as a bogus field. pi owns `chat_template_kwargs` natively now; see below.                                                                  |
 | _(any other field)_            | any     | Forwarded to the top-level body as-is. Forward-compat for new vLLM/MLX params without needing an extension update.                                                                                                                    |
 
-### `qwenChatTemplateFlag` details
+### Thinking / `chat_template_kwargs`
 
-Pi's `qwen-chat-template` thinking format emits:
+**This extension no longer manages `chat_template_kwargs`.** pi owns it
+natively, and the old `qwenChatTemplateFlag` (which did a wholesale
+*replace*) silently dropped pi's `preserve_thinking: true` default — the
+field Qwen needs on for consistent multi-turn / post-compaction reasoning.
+If the key is still in your config it is stripped and ignored, with a
+one-time warning per model.
 
-```json
-"chat_template_kwargs": {
-  "enable_thinking": <bool, from reasoning effort>,
-  "preserve_thinking": true
+Configure thinking on the **model** instead, via `compat` in
+`~/.pi/agent/models.json`:
+
+```jsonc
+// Template honors both keys — pi emits { enable_thinking, preserve_thinking: true }:
+"compat": { "thinkingFormat": "qwen-chat-template" }
+
+// Template honors only specific keys — declare exactly what to send:
+"compat": {
+  "thinkingFormat": "chat-template",
+  "chatTemplateKwargs": { "enable_thinking": { "$var": "thinking.enabled" } }
 }
 ```
 
-Some Qwen-derived chat templates honor only one of these keys. Set
-`qwenChatTemplateFlag` in your `sampling` block to force the request body
-to send only `{ [flag]: true }`:
-
-```json
-"sampling": { "qwenChatTemplateFlag": "preserve_thinking" }
-```
-
-Result: `chat_template_kwargs: { "preserve_thinking": true }` — no
-`enable_thinking`. Reverse it (`"enable_thinking"`) and the request gets
-`chat_template_kwargs: { "enable_thinking": true }`.
-
-If the model doesn't use `qwen-chat-template`, the flag is a no-op (pi
-doesn't add `chat_template_kwargs` to the payload in the first place).
+`{ "$var": "thinking.enabled" }` resolves to pi's reasoning-effort state;
+`{ "$var": "thinking.effort", "omitWhenOff": true }` maps the effort level
+and drops the key when thinking is off. The `qwen-chat-template` format is
+the shortcut for the common Qwen case and keeps `preserve_thinking` on.
 
 ## Compatibility
 
@@ -253,13 +251,13 @@ doesn't add `chat_template_kwargs` to the payload in the first place).
 - **Servers**: any OpenAI-compatible endpoint. Tested patterns: vLLM,
   LM Studio, llama.cpp server, Ollama, MLX-LM, SGLang, Together AI,
   Fireworks AI, OpenRouter.
-- **Models**: any model. The six core sampling fields are universal —
-  Qwen, Llama, DeepSeek, Mistral, gpt-oss, etc. `qwenChatTemplateFlag` is
-  the only Qwen-specific bit.
-- **pi version**: tested with pi >= 0.74 (the version that introduced
-  `compat.thinkingFormat: "qwen-chat-template"`). Earlier pi versions also
-  work for the six sampling fields; only `qwenChatTemplateFlag` needs
-  >= 0.74.
+- **Models**: any model. The sampling fields are universal — Qwen, Llama,
+  DeepSeek, Mistral, gpt-oss, etc. The extension is no longer Qwen-specific
+  in any way.
+- **pi version**: works on any pi with the `before_provider_request` event.
+  Native `chat_template_kwargs` control (`qwen-chat-template`,
+  `chat-template`) requires a recent pi; for `chat-template` specifically,
+  pi with chat-template thinking compat.
 
 ## How it works
 
@@ -268,12 +266,11 @@ event, which fires after the payload is built and just before the HTTP
 request is sent. The handler is scoped by `ctx.model.provider/id`: only
 providers/models that declare a `sampling` block are touched. For each
 matching request the handler merges sampling fields into the top-level
-body and (optionally) rewrites `chat_template_kwargs` based on
-`qwenChatTemplateFlag`. Pi's built-in streaming, tool-call handling,
-abort, retries are not touched.
+body. It does not touch `chat_template_kwargs` — pi builds that itself.
+Pi's built-in streaming, tool-call handling, abort, retries are not
+touched.
 
-Source: [`./.pi/extensions/pi-sampling.ts`](./.pi/extensions/pi-sampling.ts)
-(~90 lines).
+Source: [`./.pi/extensions/pi-sampling.ts`](./.pi/extensions/pi-sampling.ts).
 
 ## Upgrading from a local install
 

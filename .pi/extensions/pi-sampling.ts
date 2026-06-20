@@ -12,13 +12,16 @@
 // are untouched. Config files are re-read when their mtime changes, so edits
 // take effect without restarting pi.
 //
-// Control keys (filtered out before the top-level spread):
+// DEPRECATED control keys (stripped before the top-level spread, never sent):
 //
 //   qwenChatTemplateFlag: <string>
-//     For models that use compat.thinkingFormat: "qwen-chat-template". Pi
-//     defaults to chat_template_kwargs: { enable_thinking, preserve_thinking }.
-//     Setting this flag REPLACES that object with { [flag]: true } — useful
-//     for chat templates that only honor one of these keys.
+//     No longer honored. pi now owns chat_template_kwargs natively: the
+//     "qwen-chat-template" thinking format emits { enable_thinking,
+//     preserve_thinking: true }, and the "chat-template" format lets a model
+//     declare arbitrary kwargs via compat.chatTemplateKwargs in models.json.
+//     This extension used to REPLACE that object, which silently dropped pi's
+//     preserve_thinking default. If present the key is ignored with a warning;
+//     migrate to compat.chatTemplateKwargs / "chat-template" instead.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -32,6 +35,7 @@ type Sampling = {
 	presence_penalty?: number;
 	frequency_penalty?: number;
 	repetition_penalty?: number;
+	/** @deprecated No longer honored — see header. Stripped and warned about. */
 	qwenChatTemplateFlag?: string;
 	[extra: string]: unknown;
 };
@@ -171,6 +175,10 @@ function loadSamplingIndex(): Map<string, Sampling> {
 let cachedSignature = "";
 let cachedIndex = new Map<string, Sampling>();
 
+// Tracks provider/model keys already warned about the deprecated
+// qwenChatTemplateFlag, so the warning fires at most once per model.
+const warnedDeprecatedFlag = new Set<string>();
+
 function getSamplingIndex(): Map<string, Sampling> {
 	const sig = fileSignature();
 	if (sig !== cachedSignature) {
@@ -194,16 +202,25 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
+		// qwenChatTemplateFlag is deprecated: pi owns chat_template_kwargs now.
+		// Strip it so it can't leak as a bogus top-level field, and warn once
+		// per model so a stale config is surfaced without spamming requests.
 		const { qwenChatTemplateFlag, ...topLevelExtras } = extras;
-		const next: Record<string, unknown> = {
+		if (qwenChatTemplateFlag !== undefined) {
+			const key = `${model.provider}/${model.id}`;
+			if (!warnedDeprecatedFlag.has(key)) {
+				warnedDeprecatedFlag.add(key);
+				console.warn(
+					`[pi-sampling] qwenChatTemplateFlag is deprecated and ignored (${key}). ` +
+						'Use compat.thinkingFormat "qwen-chat-template" (emits enable_thinking + ' +
+						'preserve_thinking) or "chat-template" with compat.chatTemplateKwargs in models.json.',
+				);
+			}
+		}
+
+		return {
 			...(event.payload as Record<string, unknown>),
 			...topLevelExtras,
 		};
-
-		if (typeof qwenChatTemplateFlag === "string" && qwenChatTemplateFlag.length > 0) {
-			next.chat_template_kwargs = { [qwenChatTemplateFlag]: true };
-		}
-
-		return next;
 	});
 }
